@@ -1,11 +1,18 @@
 import { Filter } from 'bad-words';
 
-const profanityFilter = new Filter();
+let profanityFilter: Filter | null = null;
+
+function getProfanityFilter() {
+  if (!profanityFilter) {
+    profanityFilter = new Filter();
+  }
+  return profanityFilter;
+}
 
 export function hasBannedLanguage(text: string): boolean {
-  return profanityFilter.isProfane(text);
+  return getProfanityFilter().isProfane(text);
 }
 
 export function sanitizeLanguage(text: string): string {
-  return profanityFilter.clean(text);
+  return getProfanityFilter().clean(text);
 }

@@ -87,6 +87,26 @@ export function useChat() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    const onHardReloadKeyDown = (e: KeyboardEvent) => {
+      const isHardReload =
+        e.shiftKey && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'r';
+      if (!isHardReload) return;
+
+      try {
+        const storageKey = getChatStorageKey();
+        if (storageKey) window.localStorage.removeItem(storageKey);
+      } catch {
+        // Ignore storage failures.
+      }
+    };
+
+    window.addEventListener('keydown', onHardReloadKeyDown);
+    return () => window.removeEventListener('keydown', onHardReloadKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
     const storageKey = getChatStorageKey();
     if (!storageKey) return;
     window.localStorage.setItem(
