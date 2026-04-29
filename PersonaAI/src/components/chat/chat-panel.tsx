@@ -5,6 +5,7 @@ import { PromptInputBox } from '@/components/ui/ai-prompt-box';
 import { type ChatAttachment, type ChatMode } from '@/features/chat/types';
 import { type ChatMessage } from '@/lib/chat';
 import { type PersonaConfig } from '@/lib/personas';
+import { MessageContent } from '@/components/chat/message-content';
 
 type ChatPanelProps = {
   activePersona: PersonaConfig;
@@ -48,7 +49,7 @@ export function ChatPanel({
                   : 'border border-zinc-700 bg-zinc-900 text-zinc-100',
               ].join(' ')}
             >
-              {message.content}
+              <MessageContent content={message.content} />
               {message.attachments && message.attachments.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {message.attachments.map((file) => (

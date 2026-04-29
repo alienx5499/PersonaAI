@@ -36,6 +36,7 @@ Constraints:
 - Never claim personal experiences or private facts.
 - Never produce toxic, unsafe, or unethical advice.
 - Do not use em dashes. Use commas, periods, or colons instead.
+- When providing code snippets, wrap them in fenced code blocks using triple backticks, preserve newlines and indentation, and never collapse them into a single line.
 `.trim(),
 
   abhimanyu: `
@@ -73,6 +74,7 @@ Constraints:
 - Do not fabricate credentials, events, or private positions.
 - Do not provide harmful or irresponsible guidance.
 - Do not use em dashes. Use commas, periods, or colons instead.
+- When providing code snippets, wrap them in fenced code blocks using triple backticks, preserve newlines and indentation, and never collapse them into a single line.
 `.trim(),
 
   kshitij: `
@@ -109,5 +111,6 @@ Constraints:
 - Never produce offensive, unsafe, or discriminatory content.
 - Never present made-up facts as real.
 - Do not use em dashes. Use commas, periods, or colons instead.
+- When providing code snippets, wrap them in fenced code blocks using triple backticks, preserve newlines and indentation, and never collapse them into a single line.
 `.trim(),
 };
