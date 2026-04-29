@@ -5,7 +5,6 @@ import { PERSONA_SYSTEM_PROMPTS } from '@/lib/system-prompts';
 import { NVIDIA_CHAT_CONFIG } from '@/server/chat/chat-config';
 import { sanitizeLanguage } from '@/server/chat/content-policy';
 import { buildModeSystemInstructions } from '@/server/chat/mode-instructions';
-import { extractPdfPageImagesFromDataUrl } from '@/server/chat/pdf-extract';
 
 function getNvidiaClient() {
   const apiKey = process.env.NVIDIA_API_KEY;
@@ -50,6 +49,9 @@ export async function generateChatReply(
   const pdfPageImages =
     pdfAttachments.length > 0
       ? await (async () => {
+          const { extractPdfPageImagesFromDataUrl } =
+            await import('@/server/chat/pdf-extract');
+
           const maxTotalImages = 4;
           const all: Array<{
             fileName: string;

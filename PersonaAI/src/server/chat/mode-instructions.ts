@@ -1,7 +1,6 @@
 import { type ChatRequest } from '@/features/chat/types';
 
 import { fetchWebSearchSnippets } from '@/server/chat/websearch';
-import { extractPdfTextFromDataUrl } from '@/server/chat/pdf-extract';
 
 const MAX_MODE_INSTRUCTIONS_CHARS = 9000;
 
@@ -12,11 +11,19 @@ async function buildPdfContext(
   const blocks: string[] = [];
   let consumed = 0;
 
-  for (const file of payload.attachments) {
-    if (file.type !== 'application/pdf' || !file.dataUrl) continue;
+  const pdfAttachments = payload.attachments.filter(
+    (file) => file.type === 'application/pdf' && !!file.dataUrl,
+  );
+
+  if (pdfAttachments.length === 0) return [];
+
+  const { extractPdfTextFromDataUrl } =
+    await import('@/server/chat/pdf-extract');
+
+  for (const file of pdfAttachments) {
     const extracted = await extractPdfTextFromDataUrl({
       fileName: file.name,
-      dataUrl: file.dataUrl,
+      dataUrl: file.dataUrl as string,
       maxChars: 6000,
       signal: opts?.signal,
     });
