@@ -68,14 +68,19 @@ export async function POST(req: Request) {
     console.error('Chat route error:', error);
     if (error instanceof Error && error.name === 'AbortError') {
       return NextResponse.json(
-        { error: 'Request timed out. Please try again.' },
+        { error: 'Request timed out. Please try again.', code: 'CHAT_TIMEOUT' },
         { status: 504 },
       );
     }
-    const message =
-      error instanceof Error && error.message.includes('NVIDIA_API_KEY')
-        ? error.message
-        : 'Failed to generate response. Please try again in a moment.';
-    return NextResponse.json({ error: message }, { status: 500 });
+
+    const isMissingKey =
+      error instanceof Error &&
+      error.message.includes('Missing NVIDIA_API_KEY');
+    const message = isMissingKey
+      ? error.message
+      : 'Failed to generate response. Please try again in a moment.';
+    const code = isMissingKey ? 'NVIDIA_API_KEY_MISSING' : 'CHAT_ROUTE_ERROR';
+
+    return NextResponse.json({ error: message, code }, { status: 500 });
   }
 }
