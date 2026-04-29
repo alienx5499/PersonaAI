@@ -12,7 +12,7 @@ interface GooeyTextProps {
   textClassName?: string;
 }
 
-export function GooeyText({
+export const GooeyText = React.memo(function GooeyText({
   texts,
   morphTime = 1,
   cooldownTime = 0.25,
@@ -21,36 +21,47 @@ export function GooeyText({
 }: GooeyTextProps) {
   const text1Ref = React.useRef<HTMLSpanElement>(null);
   const text2Ref = React.useRef<HTMLSpanElement>(null);
+  const filterId = React.useId();
 
   React.useEffect(() => {
+    if (texts.length === 0) return;
+
+    const text1 = text1Ref.current;
+    const text2 = text2Ref.current;
+    if (!text1 || !text2) return;
+
     let textIndex = texts.length - 1;
-    let time = new Date();
+    let time = performance.now();
     let morph = 0;
     let cooldown = cooldownTime;
     let frame = 0;
+    let inCooldown = false;
+
+    text1.textContent = texts[textIndex % texts.length];
+    text2.textContent = texts[(textIndex + 1) % texts.length];
 
     const setMorph = (fraction: number) => {
-      if (text1Ref.current && text2Ref.current) {
-        text2Ref.current.style.filter = `blur(${Math.min(8 / fraction - 8, 100)}px)`;
-        text2Ref.current.style.opacity = `${Math.pow(fraction, 0.4) * 100}%`;
+      const safeFraction = Math.max(fraction, 0.0001);
+      const inverse = Math.max(1 - fraction, 0.0001);
 
-        const inverse = 1 - fraction;
-        text1Ref.current.style.filter = `blur(${Math.min(8 / inverse - 8, 100)}px)`;
-        text1Ref.current.style.opacity = `${Math.pow(inverse, 0.4) * 100}%`;
-      }
+      text2.style.filter = `blur(${Math.min(8 / safeFraction - 8, 100)}px)`;
+      text2.style.opacity = `${Math.pow(fraction, 0.4) * 100}%`;
+      text1.style.filter = `blur(${Math.min(8 / inverse - 8, 100)}px)`;
+      text1.style.opacity = `${Math.pow(1 - fraction, 0.4) * 100}%`;
     };
 
     const doCooldown = () => {
       morph = 0;
-      if (text1Ref.current && text2Ref.current) {
-        text2Ref.current.style.filter = '';
-        text2Ref.current.style.opacity = '100%';
-        text1Ref.current.style.filter = '';
-        text1Ref.current.style.opacity = '0%';
-      }
+      if (inCooldown) return;
+      inCooldown = true;
+      text2.style.filter = '';
+      text2.style.opacity = '100%';
+      text1.style.filter = '';
+      text1.style.opacity = '0%';
     };
 
     const doMorph = () => {
+      inCooldown = false;
       morph -= cooldown;
       cooldown = 0;
       let fraction = morph / morphTime;
@@ -65,9 +76,9 @@ export function GooeyText({
 
     const animate = () => {
       frame = requestAnimationFrame(animate);
-      const newTime = new Date();
+      const newTime = performance.now();
       const shouldIncrementIndex = cooldown > 0;
-      const dt = (newTime.getTime() - time.getTime()) / 1000;
+      const dt = (newTime - time) / 1000;
       time = newTime;
 
       cooldown -= dt;
@@ -75,11 +86,8 @@ export function GooeyText({
       if (cooldown <= 0) {
         if (shouldIncrementIndex) {
           textIndex = (textIndex + 1) % texts.length;
-          if (text1Ref.current && text2Ref.current) {
-            text1Ref.current.textContent = texts[textIndex % texts.length];
-            text2Ref.current.textContent =
-              texts[(textIndex + 1) % texts.length];
-          }
+          text1.textContent = texts[textIndex % texts.length];
+          text2.textContent = texts[(textIndex + 1) % texts.length];
         }
         doMorph();
       } else {
@@ -95,7 +103,7 @@ export function GooeyText({
     <div className={cn('relative', className)}>
       <svg className="absolute h-0 w-0" aria-hidden="true" focusable="false">
         <defs>
-          <filter id="threshold">
+          <filter id={filterId}>
             <feColorMatrix
               in="SourceGraphic"
               type="matrix"
@@ -110,7 +118,7 @@ export function GooeyText({
 
       <div
         className="relative flex min-h-[2.5rem] w-full items-center justify-center"
-        style={{ filter: 'url(#threshold)' }}
+        style={{ filter: `url(#${filterId})` }}
       >
         <span
           ref={text1Ref}
@@ -129,4 +137,4 @@ export function GooeyText({
       </div>
     </div>
   );
-}
+});
