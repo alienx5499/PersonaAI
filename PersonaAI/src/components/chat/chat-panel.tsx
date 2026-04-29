@@ -2,6 +2,7 @@
 
 import { GlowingPanel } from '@/components/chat/glowing-panel';
 import { PromptInputBox } from '@/components/ui/ai-prompt-box';
+import { type ChatAttachment, type ChatMode } from '@/features/chat/types';
 import { type ChatMessage } from '@/lib/chat';
 import { type PersonaConfig } from '@/lib/personas';
 
@@ -10,7 +11,13 @@ type ChatPanelProps = {
   messages: ChatMessage[];
   isTyping: boolean;
   errorMessage: string | null;
-  onSubmitMessage: (message: string) => void;
+  onSubmitMessage: (
+    message: string,
+    options?: {
+      mode?: ChatMode;
+      attachments?: ChatAttachment[];
+    },
+  ) => void;
 };
 
 export function ChatPanel({
@@ -42,6 +49,65 @@ export function ChatPanel({
               ].join(' ')}
             >
               {message.content}
+              {message.attachments && message.attachments.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {message.attachments.map((file) => (
+                    <span
+                      key={`${message.id}-${file.name}`}
+                      className="inline-flex"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (file.dataUrl) {
+                            const dataUrl = file.dataUrl;
+                            // Use object URL to avoid browser blocking very long data URLs.
+                            void (async () => {
+                              try {
+                                const res = await fetch(dataUrl);
+                                const blob = await res.blob();
+                                const url = URL.createObjectURL(blob);
+                                window.open(
+                                  url,
+                                  '_blank',
+                                  'noopener,noreferrer',
+                                );
+                                setTimeout(
+                                  () => URL.revokeObjectURL(url),
+                                  10_000,
+                                );
+                              } catch {
+                                window.open(
+                                  file.dataUrl,
+                                  '_blank',
+                                  'noopener,noreferrer',
+                                );
+                              }
+                            })();
+                          }
+                        }}
+                        disabled={!file.dataUrl}
+                        className={[
+                          'rounded-full border px-2 py-0.5 text-[11px]',
+                          message.role === 'user'
+                            ? 'border-zinc-300/80 bg-zinc-100 text-zinc-700'
+                            : 'border-zinc-600 bg-zinc-800 text-zinc-300',
+                          file.dataUrl
+                            ? 'cursor-pointer underline decoration-dotted underline-offset-2'
+                            : 'cursor-default opacity-80',
+                        ].join(' ')}
+                        title={
+                          file.dataUrl
+                            ? 'Open attachment in browser'
+                            : 'No preview URL'
+                        }
+                      >
+                        {file.name}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))
         )}
@@ -65,7 +131,7 @@ export function ChatPanel({
           isLoading={isTyping}
           placeholder={`Ask ${activePersona.name}...`}
           className="rounded-xl border-zinc-700 bg-zinc-900 shadow-none"
-          onSend={(message) => onSubmitMessage(message)}
+          onSend={(message, options) => onSubmitMessage(message, options)}
         />
       </div>
     </GlowingPanel>

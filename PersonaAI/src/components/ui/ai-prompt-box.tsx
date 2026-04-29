@@ -13,10 +13,20 @@ import {
   FolderCode,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { type ChatAttachment, type ChatMode } from '@/features/chat/types';
 
 // Utility function for className merging
 const cn = (...classes: (string | undefined | null | false)[]) =>
   classes.filter(Boolean).join(' ');
+
+const urlRegex = /https?:\/\/[^\s)]+/g;
+
+function extractUrls(text: string): string[] {
+  if (!text.trim()) return [];
+  const matches = text.match(urlRegex) ?? [];
+  // Dedupe while preserving order.
+  return Array.from(new Set(matches));
+}
 
 // Embedded CSS for minimal custom styles
 const styles = `
@@ -39,15 +49,17 @@ const styles = `
   }
 `;
 
-// Inject styles into document (client-only)
-if (
-  typeof document !== 'undefined' &&
-  !document.getElementById('ai-prompt-box-styles')
-) {
-  const styleSheet = document.createElement('style');
-  styleSheet.id = 'ai-prompt-box-styles';
-  styleSheet.innerText = styles;
-  document.head.appendChild(styleSheet);
+async function openDataUrlInNewTab(dataUrl: string) {
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch {
+    // Fallback: try opening the data URL directly.
+    window.open(dataUrl, '_blank', 'noopener,noreferrer');
+  }
 }
 
 // Textarea Component
@@ -206,7 +218,10 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         timerRef.current = null;
       }
       onStopRecording(time);
-      setTime(0);
+      // Avoid synchronous setState inside an effect (eslint rule).
+      if (typeof queueMicrotask === 'function')
+        queueMicrotask(() => setTime(0));
+      else setTimeout(() => setTime(0), 0);
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -233,17 +248,22 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         </span>
       </div>
       <div className="w-full h-10 flex items-center justify-center gap-0.5 px-4">
-        {[...Array(visualizerBars)].map((_, i) => (
-          <div
-            key={i}
-            className="w-0.5 rounded-full bg-white/50 animate-pulse"
-            style={{
-              height: `${Math.max(15, Math.random() * 100)}%`,
-              animationDelay: `${i * 0.05}s`,
-              animationDuration: `${0.5 + Math.random() * 0.5}s`,
-            }}
-          />
-        ))}
+        {[...Array(visualizerBars)].map((_, i) => {
+          // Deterministic pseudo-random values (no Math.random in render).
+          const heightPct = 15 + ((i * 37) % 85); // 15..99
+          const durationSec = 0.5 + ((i * 19) % 50) / 100; // 0.5..1.0
+          return (
+            <div
+              key={i}
+              className="w-0.5 rounded-full bg-white/50 animate-pulse"
+              style={{
+                height: `${heightPct}%`,
+                animationDelay: `${i * 0.05}s`,
+                animationDuration: `${durationSec}s`,
+              }}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -419,8 +439,7 @@ const PromptInputTextarea: React.FC<
   );
 };
 
-interface PromptInputActionsProps extends React.HTMLAttributes<HTMLDivElement> {}
-const PromptInputActions: React.FC<PromptInputActionsProps> = ({
+const PromptInputActions: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
   children,
   className,
   ...props
@@ -471,7 +490,13 @@ const CustomDivider: React.FC = () => (
 
 // Main PromptInputBox Component
 interface PromptInputBoxProps {
-  onSend?: (message: string, files?: File[]) => void;
+  onSend?: (
+    message: string,
+    options?: {
+      mode?: ChatMode;
+      attachments?: ChatAttachment[];
+    },
+  ) => void;
   isLoading?: boolean;
   placeholder?: string;
   className?: string;
@@ -496,8 +521,23 @@ export const PromptInputBox = React.forwardRef(
     const [showSearch, setShowSearch] = React.useState(false);
     const [showThink, setShowThink] = React.useState(false);
     const [showCanvas, setShowCanvas] = React.useState(false);
+    const [enabledLinks, setEnabledLinks] = React.useState<
+      Record<string, boolean>
+    >({});
+    const links = React.useMemo(() => extractUrls(input), [input]);
     const uploadInputRef = React.useRef<HTMLInputElement>(null);
     const promptBoxRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+      // Ensure our minimal scrollbar/focus styles exist without doing DOM work at module scope.
+      if (typeof document === 'undefined') return;
+      if (document.getElementById('ai-prompt-box-styles')) return;
+
+      const styleSheet = document.createElement('style');
+      styleSheet.id = 'ai-prompt-box-styles';
+      styleSheet.innerText = styles;
+      document.head.appendChild(styleSheet);
+    }, []);
 
     const handleToggleChange = (value: string) => {
       if (value === 'search') {
@@ -512,10 +552,13 @@ export const PromptInputBox = React.forwardRef(
     const handleCanvasToggle = () => setShowCanvas((prev) => !prev);
 
     const isImageFile = (file: File) => file.type.startsWith('image/');
+    const isPdfFile = (file: File) => file.type === 'application/pdf';
+    const isSupportedFile = (file: File) =>
+      isImageFile(file) || isPdfFile(file);
 
     const processFile = (file: File) => {
-      if (!isImageFile(file)) {
-        console.log('Only image files are allowed');
+      if (!isSupportedFile(file)) {
+        console.log('Only image and PDF files are allowed');
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
@@ -523,10 +566,17 @@ export const PromptInputBox = React.forwardRef(
         return;
       }
       setFiles([file]);
-      const reader = new FileReader();
-      reader.onload = (e) =>
-        setFilePreviews({ [file.name]: e.target?.result as string });
-      reader.readAsDataURL(file);
+      if (isImageFile(file)) {
+        const reader = new FileReader();
+        reader.onload = (e) =>
+          setFilePreviews({ [file.name]: e.target?.result as string });
+        reader.readAsDataURL(file);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) =>
+          setFilePreviews({ [file.name]: e.target?.result as string });
+        reader.readAsDataURL(file);
+      }
     };
 
     const handleDragOver = React.useCallback((e: React.DragEvent) => {
@@ -543,8 +593,8 @@ export const PromptInputBox = React.forwardRef(
       e.preventDefault();
       e.stopPropagation();
       const files = Array.from(e.dataTransfer.files);
-      const imageFiles = files.filter((file) => isImageFile(file));
-      if (imageFiles.length > 0) processFile(imageFiles[0]);
+      const supportedFiles = files.filter((file) => isSupportedFile(file));
+      if (supportedFiles.length > 0) processFile(supportedFiles[0]);
     }, []);
 
     const handleRemoveFile = (index: number) => {
@@ -568,6 +618,8 @@ export const PromptInputBox = React.forwardRef(
           }
         }
       }
+
+      // Link highlighting is derived from `input`, so no extra state updates here.
     }, []);
 
     React.useEffect(() => {
@@ -575,19 +627,35 @@ export const PromptInputBox = React.forwardRef(
       return () => document.removeEventListener('paste', handlePaste);
     }, [handlePaste]);
 
+    // no-op: links are derived from `input`
+
     const handleSubmit = () => {
       if (input.trim() || files.length > 0) {
-        let messagePrefix = '';
-        if (showSearch) messagePrefix = '[Search: ';
-        else if (showThink) messagePrefix = '[Think: ';
-        else if (showCanvas) messagePrefix = '[Canvas: ';
-        const formattedInput = messagePrefix
-          ? `${messagePrefix}${input}]`
-          : input;
-        onSend(formattedInput, files);
+        const mode: ChatMode = showCanvas
+          ? 'canvas'
+          : showSearch
+            ? 'websearch'
+            : showThink
+              ? 'thinking'
+              : 'default';
+        const attachments: ChatAttachment[] = files.map((file) => ({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataUrl: filePreviews[file.name],
+        }));
+        const includedLinks = links.filter(
+          (url) => enabledLinks[url] !== false,
+        );
+        const linkSection =
+          includedLinks.length > 0
+            ? `\n\n[Links]\n${includedLinks.join('\n')}`
+            : '';
+        onSend(`${input}${linkSection}`, { mode, attachments });
         setInput('');
         setFiles([]);
         setFilePreviews({});
+        setEnabledLinks({});
       }
     };
 
@@ -596,7 +664,7 @@ export const PromptInputBox = React.forwardRef(
     const handleStopRecording = (duration: number) => {
       console.log(`Stopped recording after ${duration} seconds`);
       setIsRecording(false);
-      onSend(`[Voice message - ${duration} seconds]`, []);
+      onSend(`[Voice message - ${duration} seconds]`, { mode: 'default' });
     };
 
     const hasContent = input.trim() !== '' || files.length > 0;
@@ -645,8 +713,84 @@ export const PromptInputBox = React.forwardRef(
                         </button>
                       </div>
                     )}
+                  {!file.type.startsWith('image/') && (
+                    <div className="flex items-center gap-2 rounded-xl border border-[#444444] bg-[#2A2B2E] px-3 py-2 text-xs text-gray-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const preview = filePreviews[file.name];
+                          if (preview) void openDataUrlInNewTab(preview);
+                        }}
+                        className="max-w-[8rem] cursor-pointer truncate text-left underline decoration-dotted underline-offset-2"
+                        title="Open PDF in browser"
+                      >
+                        {file.name}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFile(index);
+                        }}
+                        className="rounded-full bg-black/40 p-0.5 transition-colors hover:bg-black/70"
+                      >
+                        <X className="h-3 w-3 text-white" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {links.length > 0 && !isRecording && (
+            <div className="flex flex-wrap items-center gap-2 p-0 pb-1">
+              {links.map((url) => {
+                const included = enabledLinks[url] !== false;
+                return (
+                  <div
+                    key={url}
+                    className="flex max-w-full items-center gap-2 rounded-full border border-[#444444] bg-[#2A2B2E] px-3 py-1.5"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          // Normalize URL and open.
+                          const normalized = new URL(url).toString();
+                          window.open(
+                            normalized,
+                            '_blank',
+                            'noopener,noreferrer',
+                          );
+                        } catch {
+                          window.open(url, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                      className="max-w-[10rem] truncate text-left text-[11px] text-gray-200 underline decoration-dotted underline-offset-2"
+                      title={url}
+                    >
+                      {url}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEnabledLinks((prev) => ({
+                          ...prev,
+                          [url]: prev[url] === false ? true : false,
+                        }))
+                      }
+                      className="rounded-full border border-[#444444] bg-transparent px-2 py-0.5 text-[11px] text-gray-200 transition-colors hover:bg-[#333333]"
+                      title={
+                        included
+                          ? 'Will be sent to the model'
+                          : 'Will NOT be sent'
+                      }
+                    >
+                      {included ? 'Send' : 'Skip'}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -685,7 +829,7 @@ export const PromptInputBox = React.forwardRef(
                 isRecording ? 'opacity-0 invisible h-0' : 'opacity-100 visible',
               )}
             >
-              <PromptInputAction tooltip="Upload image">
+              <PromptInputAction tooltip="Upload image or PDF">
                 <button
                   onClick={() => uploadInputRef.current?.click()}
                   className="flex h-8 w-8 text-[#9CA3AF] cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-gray-600/30 hover:text-[#D1D5DB]"
@@ -701,7 +845,7 @@ export const PromptInputBox = React.forwardRef(
                         processFile(e.target.files[0]);
                       if (e.target) e.target.value = '';
                     }}
-                    accept="image/*"
+                    accept="image/*,application/pdf"
                   />
                 </button>
               </PromptInputAction>

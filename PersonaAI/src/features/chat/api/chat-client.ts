@@ -1,7 +1,9 @@
 import {
+  type ChatAttachment,
   chatResponseSchema,
   type ApiErrorResponse,
   type ChatApiMessage,
+  type ChatMode,
   type ChatRequest,
 } from '@/features/chat/types';
 import { type PersonaId } from '@/lib/personas';
@@ -9,11 +11,15 @@ import { type PersonaId } from '@/lib/personas';
 export async function requestChatReply(params: {
   personaId: PersonaId;
   messages: ChatApiMessage[];
+  mode?: ChatMode;
+  attachments?: ChatAttachment[];
   signal?: AbortSignal;
 }): Promise<string> {
   const payload: ChatRequest = {
     personaId: params.personaId,
     messages: params.messages,
+    mode: params.mode ?? 'default',
+    attachments: params.attachments ?? [],
   };
 
   const res = await fetch('/api/chat', {

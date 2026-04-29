@@ -67,8 +67,8 @@ export default function Home() {
         messages={messages}
         isTyping={isTyping}
         errorMessage={errorMessage}
-        onSubmitMessage={(message) => {
-          void sendMessage(message);
+        onSubmitMessage={(message, options) => {
+          void sendMessage(message, options);
         }}
       />
     </main>
