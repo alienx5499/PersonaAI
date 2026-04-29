@@ -3,9 +3,27 @@ import { NextResponse } from 'next/server';
 import { chatRequestSchema } from '@/server/chat/chat-schema';
 import { hasBannedLanguage } from '@/server/chat/content-policy';
 import { generateChatReply } from '@/server/chat/chat-service';
+import { checkRateLimit } from '@/server/chat/rate-limit';
 
 export async function POST(req: Request) {
   try {
+    const forwardedFor = req.headers.get('x-forwarded-for') ?? '';
+    const ip = forwardedFor.split(',')[0]?.trim() || 'local';
+
+    const rate = checkRateLimit({ key: ip, limit: 8, windowMs: 60_000 });
+    if (!rate.allowed) {
+      return new Response(
+        JSON.stringify({ error: 'Too many requests. Please slow down.' }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': String(Math.ceil(rate.retryAfterMs / 1000)),
+          },
+        },
+      );
+    }
+
     const body = await req.json();
     const parsed = chatRequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -31,7 +49,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const reply = await generateChatReply(parsed.data);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    const reply = await generateChatReply(parsed.data, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
     if (!reply) {
       return NextResponse.json(
         { error: 'Model returned an empty response.' },
@@ -42,6 +66,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ reply });
   } catch (error) {
     console.error('Chat route error:', error);
+    if (error instanceof Error && error.name === 'AbortError') {
+      return NextResponse.json(
+        { error: 'Request timed out. Please try again.' },
+        { status: 504 },
+      );
+    }
     const message =
       error instanceof Error && error.message.includes('NVIDIA_API_KEY')
         ? error.message
