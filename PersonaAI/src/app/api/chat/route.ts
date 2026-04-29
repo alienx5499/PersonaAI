@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+
 import { chatRequestSchema } from '@/server/chat/chat-schema';
 import { hasBannedLanguage } from '@/server/chat/content-policy';
 import { generateChatReply } from '@/server/chat/chat-service';

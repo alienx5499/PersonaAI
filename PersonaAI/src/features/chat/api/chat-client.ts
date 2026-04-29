@@ -31,6 +31,18 @@ export async function requestChatReply(params: {
     signal: params.signal,
   });
 
+  const contentType = res.headers.get('content-type') ?? '';
+
+  if (!contentType.includes('application/json')) {
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `Server error (${res.status}). Response: ${text.slice(0, 200)}`,
+      );
+    }
+    throw new Error('Invalid non-JSON response from server.');
+  }
+
   const data = (await res.json()) as unknown;
 
   if (!res.ok) {
