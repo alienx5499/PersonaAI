@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
 import { chatRequestSchema } from '@/server/chat/chat-schema';
+import {
+  buildOffTopicPersonaReply,
+  isClearlyOffTopicSdeQuery,
+} from '@/server/chat/scope-guard';
 import { hasBannedLanguage } from '@/server/chat/content-policy';
 import { generateChatReply } from '@/server/chat/chat-service';
 import { checkRateLimit } from '@/server/chat/rate-limit';
@@ -49,6 +53,15 @@ export async function POST(req: Request) {
         },
         { status: 400 },
       );
+    }
+
+    if (
+      latestUserMessage &&
+      isClearlyOffTopicSdeQuery(latestUserMessage.content)
+    ) {
+      return NextResponse.json({
+        reply: buildOffTopicPersonaReply(parsed.data.personaId),
+      });
     }
 
     const controller = new AbortController();

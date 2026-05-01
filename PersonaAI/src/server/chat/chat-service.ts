@@ -5,6 +5,10 @@ import { PERSONA_SYSTEM_PROMPTS } from '@/lib/system-prompts';
 import { NVIDIA_CHAT_CONFIG } from '@/server/chat/chat-config';
 import { sanitizeLanguage } from '@/server/chat/content-policy';
 import { buildModeSystemInstructions } from '@/server/chat/mode-instructions';
+import {
+  buildOffTopicPersonaReply,
+  isClearlyOffTopicSdeQuery,
+} from '@/server/chat/scope-guard';
 
 function getNvidiaClient() {
   const apiKey = process.env.NVIDIA_API_KEY;
@@ -112,7 +116,13 @@ export async function generateChatReply(
 
   const rawReply = completion.choices[0]?.message?.content?.trim() ?? '';
   if (!rawReply) {
-    return 'I could not generate a complete response from the model this time. Please resend the question, and if you uploaded a file, include what exactly you want me to verify.';
+    const latestUser = [...payload.messages]
+      .reverse()
+      .find((message) => message.role === 'user')?.content;
+    if (latestUser && isClearlyOffTopicSdeQuery(latestUser)) {
+      return buildOffTopicPersonaReply(payload.personaId);
+    }
+    return 'I could not generate a complete response this time. Ask your question again with clear SDE context, and I will help you with a focused, high-signal answer. What exact engineering problem are you solving?';
   }
   return sanitizeLanguage(rawReply.replaceAll('—', '-'));
 }
